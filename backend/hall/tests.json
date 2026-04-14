@@ -1,0 +1,12 @@
+{
+  "tests": [
+    {
+      "name": "Get hall state",
+      "method": "GET",
+      "path": "/",
+      "expectedStatus": 200,
+      "expectedBody": {"pins": [], "image_url": null},
+      "bodyMatcher": "partial"
+    }
+  ]
+}
