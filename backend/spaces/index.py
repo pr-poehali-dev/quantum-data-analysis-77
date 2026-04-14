@@ -144,6 +144,67 @@ def handler(event: dict, context) -> dict:
             "body": json.dumps(dict(row), default=str),
         }
 
+    # DELETE — удалить помещение
+    if method == "DELETE":
+        pwd = headers.get("X-Admin-Password") or headers.get("x-admin-password")
+        if pwd != ADMIN_PASSWORD:
+            return {"statusCode": 403, "headers": cors, "body": json.dumps({"error": "Неверный пароль"})}
+
+        body = json.loads(event.get("body") or "{}")
+        space_id = body.get("id")
+
+        conn = get_conn()
+        cur = conn.cursor()
+        cur.execute(f"DELETE FROM {schema}.spaces WHERE id = %s", (space_id,))
+        conn.commit()
+        cur.close()
+        conn.close()
+        return {"statusCode": 200, "headers": cors, "body": json.dumps({"ok": True})}
+
+    # POST (create) — создать новое помещение (если нет поля image)
+    if method == "POST":
+        pwd = headers.get("X-Admin-Password") or headers.get("x-admin-password")
+        if pwd != ADMIN_PASSWORD:
+            return {"statusCode": 403, "headers": cors, "body": json.dumps({"error": "Неверный пароль"})}
+
+        body = json.loads(event.get("body") or "{}")
+
+        # Если есть поле image — это загрузка фото
+        if "image" in body:
+            space_id = body.get("id")
+            image_url = upload_image(body["image"], space_id)
+            conn = get_conn()
+            cur = conn.cursor(cursor_factory=RealDictCursor)
+            cur.execute(
+                f"UPDATE {schema}.spaces SET image_url = %s WHERE id = %s RETURNING *",
+                (image_url, space_id),
+            )
+            row = cur.fetchone()
+            conn.commit()
+            cur.close()
+            conn.close()
+            return {"statusCode": 200, "headers": cors, "body": json.dumps(dict(row), default=str)}
+
+        # Иначе — создание нового помещения
+        conn = get_conn()
+        cur = conn.cursor(cursor_factory=RealDictCursor)
+        cur.execute(
+            f"""INSERT INTO {schema}.spaces (title, area, price, location, description)
+                VALUES (%s, %s, %s, %s, %s) RETURNING *""",
+            (
+                body.get("title", "Новое помещение"),
+                body.get("area") or None,
+                body.get("price") or None,
+                body.get("location", ""),
+                body.get("description", ""),
+            ),
+        )
+        row = cur.fetchone()
+        conn.commit()
+        cur.close()
+        conn.close()
+        return {"statusCode": 201, "headers": cors, "body": json.dumps(dict(row), default=str)}
+
     # PATCH — редактировать поля помещения (название, площадь, цена, локация, описание)
     if method == "PATCH":
         pwd = headers.get("X-Admin-Password") or headers.get("x-admin-password")

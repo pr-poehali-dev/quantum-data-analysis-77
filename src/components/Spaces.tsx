@@ -277,8 +277,9 @@ export default function Spaces() {
   const [loading, setLoading] = useState(true);
   const [adminPassword, setAdminPassword] = useState<string | null>(null);
   const [showPasswordModal, setShowPasswordModal] = useState(false);
-  const [pendingSpaceId, setPendingSpaceId] = useState<number | null>(null);
+  const [pendingAction, setPendingAction] = useState<(() => void) | null>(null);
   const [editingSpace, setEditingSpace] = useState<Space | null>(null);
+  const [deletingId, setDeletingId] = useState<number | null>(null);
 
   useEffect(() => {
     fetch(API_URL)
@@ -286,22 +287,21 @@ export default function Spaces() {
       .then((data) => { setSpaces(data); setLoading(false); });
   }, []);
 
-  const handleSpaceClick = (space: Space) => {
+  const withAuth = (action: () => void) => {
     if (!adminPassword) {
-      setPendingSpaceId(space.id);
+      setPendingAction(() => action);
       setShowPasswordModal(true);
     } else {
-      setEditingSpace(space);
+      action();
     }
   };
 
   const handlePasswordEnter = (pwd: string) => {
     setAdminPassword(pwd);
     setShowPasswordModal(false);
-    if (pendingSpaceId !== null) {
-      const space = spaces.find((s) => s.id === pendingSpaceId);
-      if (space) setEditingSpace(space);
-      setPendingSpaceId(null);
+    if (pendingAction) {
+      pendingAction();
+      setPendingAction(null);
     }
   };
 
@@ -310,13 +310,46 @@ export default function Spaces() {
     setEditingSpace(null);
   };
 
+  const handleAdd = async (pwd: string) => {
+    const res = await fetch(API_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Admin-Password": pwd },
+      body: JSON.stringify({ title: "Новое помещение" }),
+    });
+    const created = await res.json();
+    setSpaces((prev) => [...prev, created]);
+    setEditingSpace(created);
+  };
+
+  const handleDelete = async (spaceId: number, pwd: string) => {
+    setDeletingId(spaceId);
+    await fetch(API_URL, {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json", "X-Admin-Password": pwd },
+      body: JSON.stringify({ id: spaceId }),
+    });
+    setSpaces((prev) => prev.filter((s) => s.id !== spaceId));
+    setDeletingId(null);
+  };
+
   return (
     <section id="spaces" className="bg-white py-20 px-6">
       <div className="max-w-6xl mx-auto">
-        <p className="uppercase text-sm tracking-wide text-neutral-500 mb-4">Доступные площади</p>
-        <h2 className="text-4xl lg:text-5xl font-bold text-neutral-900 mb-12 leading-tight">
-          Помещения для аренды
-        </h2>
+        <div className="flex items-end justify-between mb-12 flex-wrap gap-4">
+          <div>
+            <p className="uppercase text-sm tracking-wide text-neutral-500 mb-4">Доступные площади</p>
+            <h2 className="text-4xl lg:text-5xl font-bold text-neutral-900 leading-tight">
+              Помещения для аренды
+            </h2>
+          </div>
+          <button
+            onClick={() => withAuth(() => handleAdd(adminPassword!))}
+            className="flex items-center gap-2 border border-black px-4 py-2 text-sm uppercase tracking-wide hover:bg-black hover:text-white transition-colors duration-200 cursor-pointer"
+          >
+            <Icon name="Plus" size={16} />
+            Добавить помещение
+          </button>
+        </div>
 
         {loading ? (
           <div className="text-neutral-400 text-center py-20">Загрузка...</div>
@@ -324,7 +357,7 @@ export default function Spaces() {
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {spaces.map((space) => (
               <div key={space.id} className="border border-neutral-200 flex flex-col">
-                <div className="h-48 bg-neutral-100 overflow-hidden">
+                <div className="h-48 bg-neutral-100 overflow-hidden relative">
                   {space.image_url ? (
                     <img src={space.image_url} alt={space.title} className="w-full h-full object-cover" />
                   ) : (
@@ -332,6 +365,14 @@ export default function Spaces() {
                       <Icon name="Store" size={48} />
                     </div>
                   )}
+                  <button
+                    onClick={() => withAuth(() => handleDelete(space.id, adminPassword!))}
+                    disabled={deletingId === space.id}
+                    className="absolute top-2 right-2 bg-white/90 hover:bg-red-50 hover:text-red-600 text-neutral-400 p-1.5 transition-colors duration-150"
+                    title="Удалить помещение"
+                  >
+                    <Icon name="Trash2" size={14} />
+                  </button>
                 </div>
                 <div className="p-5 flex flex-col flex-1">
                   <div className="flex items-start justify-between mb-2">
@@ -363,7 +404,7 @@ export default function Spaces() {
                   )}
 
                   <button
-                    onClick={() => handleSpaceClick(space)}
+                    onClick={() => withAuth(() => setEditingSpace(space))}
                     className={`mt-auto w-full py-2 text-sm uppercase tracking-wide border transition-colors duration-200 cursor-pointer ${
                       space.is_rented
                         ? "border-neutral-300 text-neutral-500 hover:border-black hover:text-black"
@@ -380,7 +421,7 @@ export default function Spaces() {
       </div>
 
       {showPasswordModal && (
-        <PasswordModal onEnter={handlePasswordEnter} onClose={() => setShowPasswordModal(false)} />
+        <PasswordModal onEnter={handlePasswordEnter} onClose={() => { setShowPasswordModal(false); setPendingAction(null); }} />
       )}
       {editingSpace && adminPassword && (
         <AdminModal
