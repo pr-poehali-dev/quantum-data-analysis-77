@@ -35,6 +35,28 @@ function AdminModal({ space, password, onClose, onSave }: AdminModalProps) {
     rent_notes: space.rent_notes || "",
   });
   const [loading, setLoading] = useState(false);
+  const [photoLoading, setPhotoLoading] = useState(false);
+  const [preview, setPreview] = useState<string | null>(space.image_url);
+
+  const handlePhotoChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setPhotoLoading(true);
+    const reader = new FileReader();
+    reader.onload = async () => {
+      const base64 = (reader.result as string).split(",")[1];
+      const res = await fetch(API_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Admin-Password": password },
+        body: JSON.stringify({ id: space.id, image: base64 }),
+      });
+      const updated = await res.json();
+      setPreview(updated.image_url);
+      setPhotoLoading(false);
+      onSave(updated);
+    };
+    reader.readAsDataURL(file);
+  };
 
   const handleSave = async (is_rented: boolean) => {
     setLoading(true);
@@ -52,7 +74,7 @@ function AdminModal({ space, password, onClose, onSave }: AdminModalProps) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={onClose}>
       <div
-        className="bg-white w-full max-w-md mx-4 p-6 relative"
+        className="bg-white w-full max-w-md mx-4 p-6 relative max-h-[90vh] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
       >
         <button className="absolute top-4 right-4 text-neutral-400 hover:text-black" onClick={onClose}>
@@ -60,6 +82,26 @@ function AdminModal({ space, password, onClose, onSave }: AdminModalProps) {
         </button>
         <h2 className="text-lg font-bold mb-1 uppercase tracking-wide">{space.title}</h2>
         <p className="text-sm text-neutral-500 mb-4">{space.location}</p>
+
+        {/* Фото */}
+        <label className="block mb-4 cursor-pointer group">
+          <div className="relative h-36 bg-neutral-100 overflow-hidden border border-neutral-200">
+            {preview ? (
+              <img src={preview} alt="фото" className="w-full h-full object-cover" />
+            ) : (
+              <div className="w-full h-full flex flex-col items-center justify-center text-neutral-300 gap-2">
+                <Icon name="ImagePlus" size={32} />
+                <span className="text-xs uppercase tracking-wide">Добавить фото</span>
+              </div>
+            )}
+            <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex items-center justify-center">
+              <span className="text-white text-xs uppercase tracking-wide flex items-center gap-1">
+                {photoLoading ? "Загружаю..." : <><Icon name="Upload" size={14} /> Загрузить фото</>}
+              </span>
+            </div>
+          </div>
+          <input type="file" accept="image/*" className="hidden" onChange={handlePhotoChange} disabled={photoLoading} />
+        </label>
 
         {space.is_rented && (
           <button
@@ -88,14 +130,12 @@ function AdminModal({ space, password, onClose, onSave }: AdminModalProps) {
             <input
               type="date"
               className="border border-neutral-300 px-3 py-2 text-sm w-full focus:outline-none focus:border-black"
-              placeholder="Начало аренды"
               value={form.rent_start}
               onChange={(e) => setForm({ ...form, rent_start: e.target.value })}
             />
             <input
               type="date"
               className="border border-neutral-300 px-3 py-2 text-sm w-full focus:outline-none focus:border-black"
-              placeholder="Конец аренды"
               value={form.rent_end}
               onChange={(e) => setForm({ ...form, rent_end: e.target.value })}
             />

@@ -1,5 +1,9 @@
+import base64
 import json
 import os
+import uuid
+
+import boto3
 import psycopg2
 from psycopg2.extras import RealDictCursor
 
@@ -8,6 +12,19 @@ ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "admin123")
 
 def get_conn():
     return psycopg2.connect(os.environ["DATABASE_URL"])
+
+
+def upload_image(data_b64: str, space_id: int) -> str:
+    data = base64.b64decode(data_b64)
+    key = f"spaces/{space_id}/{uuid.uuid4().hex}.jpg"
+    s3 = boto3.client(
+        "s3",
+        endpoint_url="https://bucket.poehali.dev",
+        aws_access_key_id=os.environ["AWS_ACCESS_KEY_ID"],
+        aws_secret_access_key=os.environ["AWS_SECRET_ACCESS_KEY"],
+    )
+    s3.put_object(Bucket="files", Key=key, Body=data, ContentType="image/jpeg")
+    return f"https://cdn.poehali.dev/projects/{os.environ['AWS_ACCESS_KEY_ID']}/bucket/{key}"
 
 
 def handler(event: dict, context) -> dict:
@@ -42,6 +59,34 @@ def handler(event: dict, context) -> dict:
             "statusCode": 200,
             "headers": cors,
             "body": json.dumps([dict(r) for r in rows], default=str),
+        }
+
+    # POST — загрузить фото помещения
+    if method == "POST":
+        pwd = headers.get("X-Admin-Password") or headers.get("x-admin-password")
+        if pwd != ADMIN_PASSWORD:
+            return {"statusCode": 403, "headers": cors, "body": json.dumps({"error": "Неверный пароль"})}
+
+        body = json.loads(event.get("body") or "{}")
+        space_id = body.get("id")
+        image_b64 = body.get("image")
+
+        image_url = upload_image(image_b64, space_id)
+
+        conn = get_conn()
+        cur = conn.cursor(cursor_factory=RealDictCursor)
+        cur.execute(
+            f"UPDATE {schema}.spaces SET image_url = %s WHERE id = %s RETURNING *",
+            (image_url, space_id),
+        )
+        row = cur.fetchone()
+        conn.commit()
+        cur.close()
+        conn.close()
+        return {
+            "statusCode": 200,
+            "headers": cors,
+            "body": json.dumps(dict(row), default=str),
         }
 
     # PUT — изменить статус аренды
