@@ -27,7 +27,15 @@ interface AdminModalProps {
 }
 
 function AdminModal({ space, password, onClose, onSave }: AdminModalProps) {
-  const [form, setForm] = useState({
+  const [tab, setTab] = useState<"info" | "rent">("info");
+  const [infoForm, setInfoForm] = useState({
+    title: space.title,
+    area: space.area,
+    price: space.price,
+    location: space.location,
+    description: space.description,
+  });
+  const [rentForm, setRentForm] = useState({
     renter_name: space.renter_name || "",
     renter_contact: space.renter_contact || "",
     rent_start: space.rent_start ? space.rent_start.slice(0, 10) : "",
@@ -58,9 +66,21 @@ function AdminModal({ space, password, onClose, onSave }: AdminModalProps) {
     reader.readAsDataURL(file);
   };
 
-  const handleSave = async (is_rented: boolean) => {
+  const handleInfoSave = async () => {
     setLoading(true);
-    const body = is_rented ? { id: space.id, is_rented: true, ...form } : { id: space.id, is_rented: false };
+    const res = await fetch(API_URL, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", "X-Admin-Password": password },
+      body: JSON.stringify({ id: space.id, ...infoForm }),
+    });
+    const updated = await res.json();
+    setLoading(false);
+    onSave(updated);
+  };
+
+  const handleRentSave = async (is_rented: boolean) => {
+    setLoading(true);
+    const body = is_rented ? { id: space.id, is_rented: true, ...rentForm } : { id: space.id, is_rented: false };
     const res = await fetch(API_URL, {
       method: "PUT",
       headers: { "Content-Type": "application/json", "X-Admin-Password": password },
@@ -80,8 +100,6 @@ function AdminModal({ space, password, onClose, onSave }: AdminModalProps) {
         <button className="absolute top-4 right-4 text-neutral-400 hover:text-black" onClick={onClose}>
           <Icon name="X" size={20} />
         </button>
-        <h2 className="text-lg font-bold mb-1 uppercase tracking-wide">{space.title}</h2>
-        <p className="text-sm text-neutral-500 mb-4">{space.location}</p>
 
         {/* Фото */}
         <label className="block mb-4 cursor-pointer group">
@@ -103,58 +121,119 @@ function AdminModal({ space, password, onClose, onSave }: AdminModalProps) {
           <input type="file" accept="image/*" className="hidden" onChange={handlePhotoChange} disabled={photoLoading} />
         </label>
 
-        {space.is_rented && (
-          <button
-            className="w-full mb-4 border border-black px-4 py-2 text-sm uppercase tracking-wide hover:bg-black hover:text-white transition-colors duration-200"
-            onClick={() => handleSave(false)}
-            disabled={loading}
-          >
-            Освободить помещение
-          </button>
+        {/* Вкладки */}
+        <div className="flex border-b border-neutral-200 mb-4">
+          {(["info", "rent"] as const).map((t) => (
+            <button
+              key={t}
+              onClick={() => setTab(t)}
+              className={`flex-1 py-2 text-xs uppercase tracking-wide transition-colors duration-150 ${
+                tab === t ? "border-b-2 border-black text-black font-medium" : "text-neutral-400 hover:text-black"
+              }`}
+            >
+              {t === "info" ? "Информация" : "Аренда"}
+            </button>
+          ))}
+        </div>
+
+        {tab === "info" && (
+          <div className="flex flex-col gap-3">
+            <input
+              className="border border-neutral-300 px-3 py-2 text-sm w-full focus:outline-none focus:border-black"
+              placeholder="Название"
+              value={infoForm.title}
+              onChange={(e) => setInfoForm({ ...infoForm, title: e.target.value })}
+            />
+            <div className="flex gap-2">
+              <input
+                className="border border-neutral-300 px-3 py-2 text-sm w-full focus:outline-none focus:border-black"
+                placeholder="Площадь, м²"
+                value={infoForm.area}
+                onChange={(e) => setInfoForm({ ...infoForm, area: e.target.value })}
+              />
+              <input
+                className="border border-neutral-300 px-3 py-2 text-sm w-full focus:outline-none focus:border-black"
+                placeholder="Цена, ₽/мес"
+                value={infoForm.price}
+                onChange={(e) => setInfoForm({ ...infoForm, price: e.target.value })}
+              />
+            </div>
+            <input
+              className="border border-neutral-300 px-3 py-2 text-sm w-full focus:outline-none focus:border-black"
+              placeholder="Локация"
+              value={infoForm.location}
+              onChange={(e) => setInfoForm({ ...infoForm, location: e.target.value })}
+            />
+            <textarea
+              className="border border-neutral-300 px-3 py-2 text-sm w-full focus:outline-none focus:border-black resize-none"
+              rows={3}
+              placeholder="Описание"
+              value={infoForm.description}
+              onChange={(e) => setInfoForm({ ...infoForm, description: e.target.value })}
+            />
+            <button
+              className="bg-black text-white px-4 py-2 text-sm uppercase tracking-wide hover:bg-neutral-800 transition-colors duration-200 disabled:opacity-50"
+              onClick={handleInfoSave}
+              disabled={loading}
+            >
+              {loading ? "Сохраняю..." : "Сохранить"}
+            </button>
+          </div>
         )}
 
-        <div className="flex flex-col gap-3">
-          <input
-            className="border border-neutral-300 px-3 py-2 text-sm w-full focus:outline-none focus:border-black"
-            placeholder="Имя арендатора"
-            value={form.renter_name}
-            onChange={(e) => setForm({ ...form, renter_name: e.target.value })}
-          />
-          <input
-            className="border border-neutral-300 px-3 py-2 text-sm w-full focus:outline-none focus:border-black"
-            placeholder="Телефон / Email"
-            value={form.renter_contact}
-            onChange={(e) => setForm({ ...form, renter_contact: e.target.value })}
-          />
-          <div className="flex gap-2">
+        {tab === "rent" && (
+          <div className="flex flex-col gap-3">
+            {space.is_rented && (
+              <button
+                className="w-full border border-black px-4 py-2 text-sm uppercase tracking-wide hover:bg-black hover:text-white transition-colors duration-200"
+                onClick={() => handleRentSave(false)}
+                disabled={loading}
+              >
+                Освободить помещение
+              </button>
+            )}
             <input
-              type="date"
               className="border border-neutral-300 px-3 py-2 text-sm w-full focus:outline-none focus:border-black"
-              value={form.rent_start}
-              onChange={(e) => setForm({ ...form, rent_start: e.target.value })}
+              placeholder="Имя арендатора"
+              value={rentForm.renter_name}
+              onChange={(e) => setRentForm({ ...rentForm, renter_name: e.target.value })}
             />
             <input
-              type="date"
               className="border border-neutral-300 px-3 py-2 text-sm w-full focus:outline-none focus:border-black"
-              value={form.rent_end}
-              onChange={(e) => setForm({ ...form, rent_end: e.target.value })}
+              placeholder="Телефон / Email"
+              value={rentForm.renter_contact}
+              onChange={(e) => setRentForm({ ...rentForm, renter_contact: e.target.value })}
             />
+            <div className="flex gap-2">
+              <input
+                type="date"
+                className="border border-neutral-300 px-3 py-2 text-sm w-full focus:outline-none focus:border-black"
+                value={rentForm.rent_start}
+                onChange={(e) => setRentForm({ ...rentForm, rent_start: e.target.value })}
+              />
+              <input
+                type="date"
+                className="border border-neutral-300 px-3 py-2 text-sm w-full focus:outline-none focus:border-black"
+                value={rentForm.rent_end}
+                onChange={(e) => setRentForm({ ...rentForm, rent_end: e.target.value })}
+              />
+            </div>
+            <textarea
+              className="border border-neutral-300 px-3 py-2 text-sm w-full focus:outline-none focus:border-black resize-none"
+              rows={3}
+              placeholder="Примечания"
+              value={rentForm.rent_notes}
+              onChange={(e) => setRentForm({ ...rentForm, rent_notes: e.target.value })}
+            />
+            <button
+              className="bg-black text-white px-4 py-2 text-sm uppercase tracking-wide hover:bg-neutral-800 transition-colors duration-200 disabled:opacity-50"
+              onClick={() => handleRentSave(true)}
+              disabled={loading}
+            >
+              {loading ? "Сохраняю..." : "Отметить как арендовано"}
+            </button>
           </div>
-          <textarea
-            className="border border-neutral-300 px-3 py-2 text-sm w-full focus:outline-none focus:border-black resize-none"
-            rows={3}
-            placeholder="Примечания"
-            value={form.rent_notes}
-            onChange={(e) => setForm({ ...form, rent_notes: e.target.value })}
-          />
-          <button
-            className="bg-black text-white px-4 py-2 text-sm uppercase tracking-wide hover:bg-neutral-800 transition-colors duration-200 disabled:opacity-50"
-            onClick={() => handleSave(true)}
-            disabled={loading}
-          >
-            {loading ? "Сохраняю..." : "Отметить как арендовано"}
-          </button>
-        </div>
+        )}
       </div>
     </div>
   );

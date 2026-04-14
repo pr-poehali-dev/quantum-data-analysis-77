@@ -144,4 +144,42 @@ def handler(event: dict, context) -> dict:
             "body": json.dumps(dict(row), default=str),
         }
 
+    # PATCH — редактировать поля помещения (название, площадь, цена, локация, описание)
+    if method == "PATCH":
+        pwd = headers.get("X-Admin-Password") or headers.get("x-admin-password")
+        if pwd != ADMIN_PASSWORD:
+            return {"statusCode": 403, "headers": cors, "body": json.dumps({"error": "Неверный пароль"})}
+
+        body = json.loads(event.get("body") or "{}")
+        space_id = body.get("id")
+
+        conn = get_conn()
+        cur = conn.cursor(cursor_factory=RealDictCursor)
+        cur.execute(
+            f"""UPDATE {schema}.spaces SET
+                title = %s,
+                area = %s,
+                price = %s,
+                location = %s,
+                description = %s
+            WHERE id = %s RETURNING *""",
+            (
+                body.get("title"),
+                body.get("area") or None,
+                body.get("price") or None,
+                body.get("location"),
+                body.get("description"),
+                space_id,
+            ),
+        )
+        row = cur.fetchone()
+        conn.commit()
+        cur.close()
+        conn.close()
+        return {
+            "statusCode": 200,
+            "headers": cors,
+            "body": json.dumps(dict(row), default=str),
+        }
+
     return {"statusCode": 405, "headers": cors, "body": json.dumps({"error": "Method not allowed"})}
