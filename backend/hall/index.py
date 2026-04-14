@@ -123,6 +123,21 @@ def handler(event: dict, context) -> dict:
         conn.close()
         return ok(dict(pin), 201)
 
+    # POST /upload-pin — загрузить фото точки (admin)
+    if method == "POST" and "/upload-pin" in path:
+        if not check_admin(headers):
+            return err("Неверный пароль")
+        pin_id = body.get("id")
+        url = upload_image(body["image"], f"pin_{pin_id}.jpg")
+        conn = get_conn()
+        cur = conn.cursor(cursor_factory=RealDictCursor)
+        cur.execute(f"UPDATE {sc}.hall_pins SET image_url = %s WHERE id = %s RETURNING *", (url, pin_id))
+        pin = cur.fetchone()
+        conn.commit()
+        cur.close()
+        conn.close()
+        return ok(dict(pin))
+
     # PATCH /pins — обновить точку: позицию, статус, метку (admin)
     if method == "PATCH" and "/pins" in path:
         if not check_admin(headers):
@@ -132,7 +147,7 @@ def handler(event: dict, context) -> dict:
         cur = conn.cursor(cursor_factory=RealDictCursor)
         fields = []
         values = []
-        for col in ("label", "x", "y", "is_rented", "renter_name", "rent_notes"):
+        for col in ("label", "x", "y", "is_rented", "renter_name", "rent_notes", "price", "image_url"):
             if col in body:
                 fields.append(f"{col} = %s")
                 values.append(body[col])

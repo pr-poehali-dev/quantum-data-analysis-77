@@ -11,6 +11,8 @@ interface Pin {
   is_rented: boolean;
   renter_name: string | null;
   rent_notes: string | null;
+  price: string | null;
+  image_url: string | null;
 }
 
 interface RequestForm {
@@ -52,8 +54,16 @@ function RequestModal({ pin, onClose }: { pin: Pin; onClose: () => void }) {
           </div>
         ) : (
           <>
+            {pin.image_url && (
+              <img src={pin.image_url} alt={pin.label} className="w-full h-36 object-cover mb-4" />
+            )}
             <h2 className="text-lg font-bold mb-1 uppercase tracking-wide">Заявка на аренду</h2>
-            <p className="text-sm text-neutral-500 mb-4">Место: <b>{pin.label}</b></p>
+            <p className="text-sm text-neutral-500 mb-1">Место: <b>{pin.label}</b></p>
+            {pin.price && (
+              <p className="text-sm font-semibold text-neutral-900 mb-4">
+                {Number(pin.price).toLocaleString("ru-RU")} ₽/мес
+              </p>
+            )}
             <div className="flex flex-col gap-3">
               <input
                 className="border border-neutral-300 px-3 py-2 text-sm w-full focus:outline-none focus:border-black"
@@ -106,11 +116,34 @@ function PinEditModal({
 }) {
   const [form, setForm] = useState({
     label: pin.label,
+    price: pin.price || "",
     is_rented: pin.is_rented,
     renter_name: pin.renter_name || "",
     rent_notes: pin.rent_notes || "",
   });
   const [loading, setLoading] = useState(false);
+  const [photoLoading, setPhotoLoading] = useState(false);
+  const [preview, setPreview] = useState<string | null>(pin.image_url);
+
+  const handlePhotoChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setPhotoLoading(true);
+    const reader = new FileReader();
+    reader.onload = async () => {
+      const base64 = (reader.result as string).split(",")[1];
+      const res = await fetch(`${API}/upload-pin`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Admin-Password": password },
+        body: JSON.stringify({ id: pin.id, image: base64 }),
+      });
+      const updated = await res.json();
+      setPreview(updated.image_url);
+      setPhotoLoading(false);
+      onSave(updated);
+    };
+    reader.readAsDataURL(file);
+  };
 
   const handleSave = async () => {
     setLoading(true);
@@ -136,17 +169,44 @@ function PinEditModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={onClose}>
-      <div className="bg-white w-full max-w-sm mx-4 p-6 relative" onClick={(e) => e.stopPropagation()}>
+      <div className="bg-white w-full max-w-sm mx-4 p-6 relative max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
         <button className="absolute top-4 right-4 text-neutral-400 hover:text-black" onClick={onClose}>
           <Icon name="X" size={20} />
         </button>
         <h2 className="text-lg font-bold mb-4 uppercase tracking-wide">Редактировать точку</h2>
+
+        {/* Фото */}
+        <label className="block mb-4 cursor-pointer group">
+          <div className="relative h-32 bg-neutral-100 border border-neutral-200 overflow-hidden">
+            {preview ? (
+              <img src={preview} alt="фото" className="w-full h-full object-cover" />
+            ) : (
+              <div className="w-full h-full flex flex-col items-center justify-center text-neutral-300 gap-1">
+                <Icon name="ImagePlus" size={28} />
+                <span className="text-xs uppercase tracking-wide">Фото помещения</span>
+              </div>
+            )}
+            <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+              <span className="text-white text-xs uppercase tracking-wide flex items-center gap-1">
+                {photoLoading ? "Загружаю..." : <><Icon name="Upload" size={13} /> Загрузить фото</>}
+              </span>
+            </div>
+          </div>
+          <input type="file" accept="image/*" className="hidden" onChange={handlePhotoChange} disabled={photoLoading} />
+        </label>
+
         <div className="flex flex-col gap-3">
           <input
             className="border border-neutral-300 px-3 py-2 text-sm w-full focus:outline-none focus:border-black"
             placeholder="Название"
             value={form.label}
             onChange={(e) => setForm({ ...form, label: e.target.value })}
+          />
+          <input
+            className="border border-neutral-300 px-3 py-2 text-sm w-full focus:outline-none focus:border-black"
+            placeholder="Цена, ₽/мес"
+            value={form.price}
+            onChange={(e) => setForm({ ...form, price: e.target.value })}
           />
           <label className="flex items-center gap-2 text-sm cursor-pointer">
             <input
@@ -394,10 +454,13 @@ export default function HallMap() {
                   pin.is_rented ? "bg-red-500" : "bg-green-400"
                 }`}
               />
-              <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-0.5 bg-black/80 text-white text-xs whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
-                {pin.label}
-                {pin.is_rented && pin.renter_name ? ` · ${pin.renter_name}` : ""}
-                {!pin.is_rented ? " · Свободно" : ""}
+              <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 bg-black/80 text-white text-xs whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none flex flex-col items-center gap-0.5">
+                <span className="font-medium">{pin.label}</span>
+                {pin.price && !pin.is_rented && (
+                  <span className="text-green-300">{Number(pin.price).toLocaleString("ru-RU")} ₽/мес</span>
+                )}
+                {pin.is_rented && pin.renter_name ? <span className="text-red-300">{pin.renter_name}</span> : null}
+                {!pin.is_rented && <span className="text-neutral-300">Свободно · кликните</span>}
               </span>
             </button>
           ))}
